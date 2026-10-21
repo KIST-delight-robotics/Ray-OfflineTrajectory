@@ -17,6 +17,3 @@ wsl_setup/*.log
 
 # 기관별 사내망 루트 인증서 (setup_allin1env.sh 가 있으면 등록, 없으면 건너뜀)
 wsl_setup/*.crt
-
-# 정리하면서 옮겨둔 파일
-_삭제예정/
