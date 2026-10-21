@@ -1,0 +1,8 @@
+# Python 3.11 (Windows). allin1 은 별도로 WSL 안에서 돈다 — README 의 "allin1 환경" 참고.
+#   python -m venv .venv
+#   .venv\Scripts\python.exe -m pip install -r requirements.txt
+numpy==2.4.6
+scipy==1.17.1
+librosa==0.11.0
+soundfile==0.14.0
+matplotlib==3.11.1   # p2a 단독 실행 시 그래프용
