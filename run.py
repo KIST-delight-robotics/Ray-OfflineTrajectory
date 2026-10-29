@@ -88,10 +88,16 @@ def process_song(raw: Path, *, force: bool = False, refresh: bool = False, led_o
 
     # ── [3] back 조명(LED) ────────────────────────────────────────────
     import p3_led_allin1 as p3
-    print("\n[3] back 조명(LED) 궤적 — allin1 설계도(라벨→연출, 박자 락 둥둥) ...")
+    print(f"\n[3] back 조명(LED) 궤적 — 모드 {p3.LED_MODE} ...")
     brightness, rows, mix, bpm = p3.generate_led(song, A, raw, n_frames=n_frames)
     led_src = mid / led_csv_name(song)
     p3.write_led_csv(led_src, brightness)
+    # final_chorus 모드: 재생 쪽 재조합용 성분(p, w, m)
+    led_parts_name = f"{song}-led_parts.csv"
+    led_parts_src = None
+    if isinstance(mix, dict) and "parts" in mix:
+        led_parts_src = mid / led_parts_name
+        p3.write_led_parts_csv(led_parts_src, mix["parts"])
     led_summary = p3.summarize(song, rows, mix, bpm)
     (mid / f"{song}-led_summary.txt").write_text(led_summary, encoding="utf-8")
     print(led_summary)
@@ -113,6 +119,9 @@ def process_song(raw: Path, *, force: bool = False, refresh: bool = False, led_o
     _copy(head_src, stage_dir(song, 3) / head_csv_name(song))
     _copy(mouth_vib_src, stage_dir(song, 3) / mouth_csv_name(song))
     _copy(led_src, stage_dir(song, 3) / led_csv_name(song))
+    if led_parts_src is not None:
+        for k in (2, 3):
+            _copy(led_parts_src, stage_dir(song, k) / led_parts_name)
 
     rows_head, rows_led = _count_rows(head_src), _count_rows(led_src)
     manifest = {

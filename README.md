@@ -49,7 +49,7 @@
 ├─ p2_offline_motion.py    [2] 입/헤드 궤적 + 비브라토
 ├─ p2a_vibrato_detector.py     비브라토 검출 엔진
 ├─ p2b_vibrato_motion.py       검출 결과 → 입 모터 delta 변환 (VibratoMotionConfig)
-├─ p3_led_allin1.py        [3] back 조명(LED) 밝기 — allin1 라벨·박자 기반
+├─ p3_led_allin1.py        [3] back 조명(LED) 밝기 — 마지막 후렴만 점등(기본) / allin1 라벨·박자(이전)
 ├─ data/segments_offline/  헤드 세그먼트 라이브러리(.npy) — 헤드 궤적 생성에 필수
 ├─ wsl_setup/              allin1 WSL 환경 설치 스크립트
 │
@@ -59,8 +59,8 @@
 ├─ 분석/<곡>/               allin1 json · stems/{vocals,drums,bass,other}.wav · <곡>_vocals.wav · <곡>_MR.wav · 요약 txt
 └─ 궤적/<곡>/
     ├─ 1_오프라인궤적/          <곡>.csv  <곡>-delta-big.csv
-    ├─ 2_오프라인궤적+조명/     <곡>.csv  <곡>-delta-big.csv  <곡>-led.csv
-    ├─ 3_전체_비브라토포함/      <곡>.csv  <곡>-delta-big.csv(비브라토)  <곡>-led.csv
+    ├─ 2_오프라인궤적+조명/     <곡>.csv  <곡>-delta-big.csv  <곡>-led.csv  <곡>-led_parts.csv
+    ├─ 3_전체_비브라토포함/      <곡>.csv  <곡>-delta-big.csv(비브라토)  <곡>-led.csv  <곡>-led_parts.csv
     ├─ _중간산출물/             원본 산출물 + _novibrato / _debug csv / 비브라토·LED 요약 txt
     └─ _manifest.json          생성 정보(행 수, BPM, 비브라토 파라미터, 단계 설명)
 ```
@@ -71,7 +71,7 @@
 |---|---|---|
 | [1] 분리 | `p1_allin1_separate` | 원곡 → allin1(bpm/beats/downbeats/segments) + demucs 4-stem. vocals=stem 복사, MR=drums+bass+other 합 |
 | [2] 궤적 | `p2_offline_motion` | vocals → head(roll,pitch,yaw), mouth 두 벌(비브라토 O/X) |
-| [3] 조명 | `p3_led_allin1` | allin1 라벨·박자 + drums/반주 stem → LED 밝기(입/헤드와 같은 행 수로 정렬) |
+| [3] 조명 | `p3_led_allin1` | allin1 라벨 + 4-stem 음량 → LED 밝기(입/헤드와 같은 행 수로 정렬). 아래 "LED 연출" 참고 |
 | [4] 정리 | `run.py` | 1·2·3 단계 폴더로 복사 + `_manifest.json` |
 
 - 1·2단계 mouth = 비브라토 적용 **전** 원본 오프라인 궤적(`base_mouth`), 3단계 mouth = 비브라토 적용본. 헤드는 세 단계 공통.
@@ -83,14 +83,43 @@
 | `<곡>.csv` (head) | `roll, pitch, yaw` | |
 | `<곡>-delta-big.csv` (mouth) | `mouth_tick, head_gesture_ratio, roll_comp_mouth` | 로봇은 col0·col1 만 사용 |
 | `<곡>-led.csv` (led) | `brightness` 1열 (0~1) | 저장 시 지각 감마 1.8 적용 |
+| `<곡>-led_parts.csv` | 헤더 `p,w,m` + 성분 3열 | `final_chorus` 모드만. **헤더 1줄 있음**, 감마 미적용 |
 
 재생할 때는 원곡 `music/<곡>.wav` 와 0행=0초로 동시에 시작한다.
+
+## LED 연출 (`p3_led_allin1.LED_MODE`)
+
+**`final_chorus` (기본)** — 마지막 후렴에서만 점등, 나머지 구간은 0.
+
+- 마지막 후렴 = 마지막 chorus 와 바로 앞에 이어진 chorus 구간들을 합친 덩어리. 후렴이 없는 곡은 전체 소등.
+- 진입 → 4s 밝아짐(→1.0) → 1.5s 피크 유지 → 3s 내려옴 → 유지 곡선 → 후렴 끝 후 4s 꺼짐.
+  밝아짐~내려옴이 후렴 길이의 절반을 넘으면 비례 축소. 곡 끝까지 여유가 모자라면 꺼짐을 줄이거나 앞당겨 마지막 행은 항상 0.
+- 유지 곡선 = 중심 0.38 ± 0.08. 곡 음량(4-stem 합 RMS, 0.5s 평활, 후렴 안 중앙값 기준)에 따라 완만히 출렁 — 박자 깜박임 없음.
+- 성분 파일로 재생 쪽에서 다시 만들 수 있다 (기본값이면 `-led.csv` 와 같음):
+
+  ```
+  b   = PEAK·p + w·(C + A·m)  → 0~1 clamp
+  out = b ^ GAMMA              기본 PEAK=1.0, C=0.38, A=0.08, GAMMA=1.8
+  ```
+
+  | 열 | 범위 | 의미 |
+  |---|---|---|
+  | `p` | 0~1 | 피크 모양(밝아짐·피크 유지·내려옴 구간) |
+  | `w` | 0~1 | 유지 곡선 비중(내려옴 0→1, 유지 1, 꺼짐 1→0) |
+  | `m` | −1~1 | 곡 음량 움직임(마지막 후렴 안 중간 음량 = 0) |
+
+  시간 값·평활·마지막 후렴 판정은 `p`·`w`·`m` 에 이미 들어가 있어 재생 쪽에서는 못 바꾼다.
+
+**`allin1` (이전 기본, 태그 `v1-led-allin1`)** — allin1 라벨이 구간별 연출 지정 + 박자에 락 된 둥둥 펄스·파도·드랍 암전.
 
 ## 튜닝 위치
 
 - 비브라토 세기: `run.py --vibrato-max-ticks 30 --vibrato-extent-reference 45 --vibrato-fade-in-s 0.12`, 세부 게이트는 `p2b_vibrato_motion.VibratoMotionConfig`
 - 입 벌림/필터: `p2_offline_motion.offline_motion_generation` 상단 상수(`min_MOUTH`, `ratio_minOPEN`, `num_div`, `thresholdnum`)
-- LED 연출: `p3_led_allin1.py` 상단(`LABEL_PLAN`, `WAVE_AMP`, `DIM_DUCK`, `BRIGHTNESS_GAIN`, `DROP_JUMP_MIN` …) → `run.py <곡> --led-only` 로 빠르게 반복
+- LED 연출: `p3_led_allin1.py` 상단 → `run.py <곡> --led-only` 로 빠르게 반복
+  - `LED_MODE` — `"final_chorus"`(기본) / `"allin1"`
+  - final_chorus: `FC_HOLD_LEVEL`(중심), `FC_MOVE_AMP`(진폭), `FC_RISE_S`·`FC_PEAK_HOLD_S`·`FC_FALL_S`·`FC_FADE_OUT_S`(시간), `FC_MOVE_SMOOTH_S`(움직임 평활), `FC_MOVE = False` 면 고정 유지
+  - allin1: `LABEL_PLAN`, `WAVE_AMP`, `DIM_DUCK`, `BRIGHTNESS_GAIN`, `DROP_JUMP_MIN` …
 
 ## 주의
 
